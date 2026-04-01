@@ -1,11 +1,12 @@
 ---
-title: "l01_data_science_tools"
+title: "lab-01_data_science_tools"
 author:
--   name: Tania Raugewitz
-   email: tania.raugewitz@colostate.edu
+  - name: Tania Raugewitz
+    email: tania.raugewitz@colostate.edu
 format: html
 editor: visual
 ---
+
 
 ```{r}
 if (!requireNamespace("pacman", quietly = TRUE)) install.packages(("pacman"))
