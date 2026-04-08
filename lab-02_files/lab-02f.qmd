@@ -7,6 +7,7 @@ author:
 format: html
 editor: visual
 ---
+
 ```{r}
 #| message: false
 #| warning: false
@@ -25,7 +26,6 @@ library(htmltools)
 
 options(tigris_use_cache = TRUE)
 ```
-
 
 1.1 Define a Projection\
 *Distance calculations require a projected coordinate system that minimizes distance distortion at the scale of CONUS. We will use the North America Equidistant Conic:*
@@ -739,6 +739,4 @@ leaflet() |>
   )
 ```
 
-#```{r}
-#library(leaflet)
-#```
+
