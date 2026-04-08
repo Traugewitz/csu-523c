@@ -1,0 +1,744 @@
+---
+title: "Lab 2: Distances and Projections"
+subtitle: 'ESS 523c: Environmental Data Science Applications'
+author:
+  - name: Tania Raugewitz
+    email: tania.raugewitz@colostate.edu
+format: html
+editor: visual
+---
+```{r}
+#| message: false
+#| warning: false
+
+library(tidyverse)
+library(sf)
+library(units)
+library(tigris)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(gghighlight)
+library(ggrepel)
+library(flextable)
+library(leaflet)
+library(htmltools)
+
+options(tigris_use_cache = TRUE)
+```
+
+
+1.1 Define a Projection\
+*Distance calculations require a projected coordinate system that minimizes distance distortion at the scale of CONUS. We will use the North America Equidistant Conic:*
+
+```{r}
+# Define projection for national-scale distance calculations
+eqdc <- '+proj=eqdc +lat_0=40 +lon_0=-96 +lat_1=20 +lat_2=60 +x_0=0 +y_0=0 
++datum= NAD83 +units=m +no_defs'
+```
+
+1.2 CONUS State Boundaries\
+*Note: cb = cartographic boundary*
+
+```{r}
+# Get CONUS state boundaries and project them
+states <- tigris::states(cb=TRUE, progress_bar = FALSE)|>
+  filter(!STUSPS %in% c("AK", "HI", "PR", "VI", "MP", "GU", "AS", "DC")) |>
+  st_transform(eqdc)
+
+sort(states$STUSPS)
+```
+
+1.3 North American Country Boundaries Use rnaturalearth::ne_countries() to get country boundaries for the United States, Canada, and Mexico.
+
+```{r}
+# Get country boundaries for the U.S., Canada, and Mexico and project them
+countries <- rnaturalearth::ne_countries(returnclass = "sf")
+#view(countries)
+
+countries <- countries |> filter(admin %in% c("United States of America", "Canada", "Mexico"))
+nrow(countries)
+
+countries <- countries |> st_transform((eqdc))
+
+st_crs(states) == st_crs(countries)
+```
+
+1.4 US City Locations
+
+```{r}
+# 1. Read CSV
+cities_raw <- readr::read_csv("data/uscities.csv")
+
+# 2. Explore
+names(cities_raw)
+glimpse(cities_raw)
+
+# 3. Convert to sf
+cities <- cities_raw |>
+  st_as_sf(coords = c("lng", "lat"), crs = 4326)
+
+# 4. Transform CRS
+cities <- cities |>
+  st_transform(eqdc)
+
+# 5. Clean data 
+cities <- cities |>
+  filter(!state_id %in% c("AK", "HI"))
+
+# 6. Build CONUS boundary
+conus_boundary <- states |>
+  st_union()
+
+# 7. Spatial filter (final geographic check)
+cities <- cities |>
+  st_filter(conus_boundary)
+
+# 8. Verify before moving on
+st_crs(states) == st_crs(cities)
+nrow(cities)
+
+coords = c("lng", "lat")
+st_crs(data)
+
+```
+
+Question 2: Distance Calculations:\
+Calculate the distance from each US city to four boundaries:
+
+1.  The US national border (coastline + land borders, resolved)
+2.  The nearest state border (internal boundaries preserved)
+3.  The Mexican border
+4.  The Canadian border
+
+```{r}
+#step 1: create the resolved US national shape:
+us_national_polygon <- states |> st_union()
+
+#step2: convert the national boundary to a line 
+us_national_border <- us_national_polygon |>
+st_cast("MULTILINESTRING")
+
+#step3: compute the distance from each city to the national border
+cities$dist_to_border <- st_distance(cities, us_national_border)
+
+#step4: convert the distance to kilometers
+cities$dist_to_border <- set_units(cities$dist_to_border, "km")
+
+#Step 5: Find the 5 farthest cities
+top_5_border <- cities |>
+  st_drop_geometry() |>
+  arrange(desc(dist_to_border)) |>
+  mutate(dist_to_border = round(dist_to_border,0))|>
+  select(city, state_id, dist_to_border) |>
+  slice_head(n = 5) |>
+  rename(
+    City = city,
+    State = state_id,
+    "Distance to Border (km)" = dist_to_border
+  )
+
+#Step 6: Make a flextable
+flextable(top_5_border) |>
+  autofit()
+
+```
+
+2.2 Distance to Nearest State Border (km) Plan:\
+1. Combine all state polygons without dissolving borders\
+2. Cast that geometry to MULTILINESTRING\
+3. Compute distance from each city to the nearest state border\
+4. Convert to kilometers and round 5 Build the top 5 table
+
+```{r}
+#step 1: combine state geometries while preserving all borders
+state_borders_geom <- states |>
+  st_combine() #keeps geoms together without dissolving shared borders
+
+#step 2: convert polygons to border lines
+state_borders <- state_borders_geom |>
+  st_cast("MULTILINESTRING")
+
+#step 3: check CRS before distance
+st_crs(cities) == st_crs(state_borders)
+
+#step 4: compute distance to nearest state border
+cities$dist_to_state <- st_distance(cities, state_borders)
+
+#step 5: convert units to kilometers 
+cities$dist_to_state <- set_units(cities$dist_to_state, "km")
+
+#step 6: round to whole kms
+cities$dist_to_state <- round(cities$dist_to_state,0)
+
+#step 7: build the top 5 table
+top_5_state <- cities |>
+  st_drop_geometry() |>
+  arrange(desc(dist_to_state)) |>
+  select(city, state_id, dist_to_state) |>
+  slice_head(n=5) |>
+  rename(
+    City = city,
+    State = state_id,
+    "Distance to State Border (km)" = dist_to_state
+  )
+
+#step 8: make the flextable
+flextable(top_5_state) |>
+  autofit() |>
+  width(j = "Distance to State Border (km)", width = 2.2)
+
+
+```
+
+2.3 Distance to Mexico (km)\
+*1. Isolate Mexico from your countries object.*\
+*2. Cast to MULTILINESTRING.*\
+*3. Compute distance from each city to the Mexican border.*\
+*4. Store as dist_to_mexico.*\
+*5. Produce a flextable of the 5 cities farthest from Mexico.*
+
+```{r}
+#step 1: isolate Mexico
+mexico <- countries |>
+  filter(admin == "Mexico")
+nrow(mexico)
+
+#step 2: convert Mexico to a border line
+mexico_border <- mexico |>
+  st_cast("MULTILINESTRING")
+
+# step 3 - make a habit to check CRS before distance
+st_crs(cities) == st_crs(mexico_border)
+
+#step 4: compute distance from each city to Mexico
+cities$dist_to_mexico <- st_distance(cities, mexico_border)
+
+#step 5: convert to kilometers
+cities$dist_to_mexico <- set_units(cities$dist_to_mexico, "km")
+
+#step 6: round to whole numbers
+cities$dist_to_mexico <- round(cities$dist_to_mexico, 0)
+
+#step 7: build the top 5 table
+top_5_mexico <- cities |>
+  st_drop_geometry() |>
+  arrange(desc(dist_to_mexico)) |>
+  select(city, state_id, dist_to_mexico) |>
+  slice_head(n=5) |>
+  rename(
+    City = city,
+    State = state_id,
+    "Distance to Mexico (km)" = dist_to_mexico
+  )
+
+#step 8: make the flextable
+flextable(top_5_mexico) |>
+  autofit() |>
+  width(j = "Distance to Mexico (km)", width = 2.1)
+
+```
+
+2.4 Distance to Canada (km)\
+*1. Isolate Canada from your countries object.*\
+*2. Cast to MULTILINESTRING.*\
+*3. Compute distance from each city to the Canadian border.*\
+*4. Store as dist_to_canada.*\
+*5. Produce a flextable of the 5 cities farthest from Canada.*
+
+```{r}
+#step 1: isolate Canada
+canada <- countries |>
+  filter(admin == "Canada")
+nrow(canada)
+
+#step 2: convert Canada to a border line
+canada_border <- canada |>
+  st_cast("MULTILINESTRING")
+
+# step 3 - make a habit to check CRS before distance
+st_crs(cities) == st_crs(canada_border)
+
+#step 4: compute distance from each city to Mexico
+cities$dist_to_canada <- st_distance(cities, canada_border)
+
+#step 5: convert to kilometers
+cities$dist_to_canada <- set_units(cities$dist_to_canada, "km")
+
+#step 6: round to whole numbers
+cities$dist_to_canada <- round(cities$dist_to_canada, 0)
+
+#step 7: build the top 5 table
+top_5_canada <- cities |>
+  st_drop_geometry() |>
+  arrange(desc(dist_to_canada)) |>
+  select(city, state_id, dist_to_canada) |>
+  slice_head(n=5) |>
+  rename(
+    City = city,
+    State = state_id,
+    "Distance to Canada (km)" = dist_to_canada
+  )
+
+#step 8: make the flextable
+flextable(top_5_canada) |>
+  autofit() |>
+  width(j = "Distance to Canada (km)", width = 2.1)
+```
+
+Question 3: Mapping Distance Patterns
+
+3.1 Reference Map Create a base reference map showing:
+
+*1. North America (US, Canada, Mexico) as filled grey polygons* *2. CONUS state boundaries as dashed lines* *3. The 10 largest US cities by population as labeled points*
+
+```{r}
+#Step 1: Create the 10 largest cities dataset
+big_cities <- cities |>
+  arrange(desc(population)) |>
+  slice_head(n = 10)
+
+#Step 2: Build the base reference map
+ggplot() +
+  geom_sf(data = countries, fill = "grey80", color = "grey40") +
+  geom_sf(data = states, fill = NA, color = "black", linetype = "dashed", linewidth = 0.3) +
+  geom_sf(data = big_cities, color = "red", size = 2) +
+  ggrepel::geom_label_repel(
+    data = big_cities,
+    aes(geometry = geometry, label = city),
+    stat = "sf_coordinates",
+    size = 3
+  ) +
+  labs(
+    title = "Reference Map of North America and the 10 Largest U.S. Cities",
+    subtitle = "Countries shown as filled polygons; CONUS state boundaries shown as dashed lines",
+    x = "Longitude",
+    y = "Latitude"
+  ) +
+  theme_minimal()
+
+```
+
+3.2 Distance to National Border Color all US cities by their distance to the national border using a continuous color scale. Highlight and label the 5 cities farthest from the border.
+
+Your map should: - Use scale_color_viridis_c() for the distance gradient - Show the CONUS outline - Label the 5 farthest cities with ggrepel
+
+In 2–3 sentences: (1) where are the cities farthest from the national border? (2) Does the geographic pattern make sense given the shape of CONUS? (3) Name one water resources application where distance to a national border would be a meaningful variable.
+
+ANSWER: The cities farthest from the national border are located in the interior of the U.S., especially in central Texas and the Great Plains. This pattern makes sense because those areas are the farthest from both coastlines and the Canadian and Mexican borders. In water resources, this kind of distance metric is useful for transboundary river systems, where management and regulations change across national boundaries.
+
+```{r}
+#step 1: create a dataset fo the 5 farthest cities
+cities <- cities |>
+  mutate(dist_to_border_km = as.numeric(set_units(dist_to_border, "km")))
+
+
+top_5_border_map <- cities |>
+  arrange(desc(dist_to_border_km)) |>
+  slice_head(n = 5)
+
+#Step 2: Build the map
+ggplot() +
+  geom_sf(data = cities, aes(color = dist_to_border_km), size = 0.5, alpha = 0.8) +
+  geom_sf(data = us_national_polygon, fill = NA, color = "black", linewidth = 0.4) +
+  geom_sf(data = top_5_border_map, color = "red", size = 2) +
+  ggrepel::geom_label_repel(
+    data = top_5_border_map,
+    aes(geometry = geometry, label = city),
+    stat = "sf_coordinates",
+    size = 3
+  ) +
+  scale_color_viridis_c(name = "Distance to Border (km)") +
+  labs(
+    title = "Distance of U.S. Cities to the National Border",
+    subtitle = "Cities are colored by distance to the resolved outer CONUS border",
+    x = "Longitude",
+    y = "Latitude"
+  ) +
+  theme_minimal()
+```
+
+3.3 Distance to Nearest State Border Color all cities by distance to the nearest state border. Highlight and label the 5 cities farthest from any state line.
+
+In 2–3 sentences: (1) how does the pattern differ from 3.2? (2) Which states appear to have the largest interior areas — do any water resources features (large river basins, aquifer extents) correlate with the states where cities can be far from borders? (3) What would a hydrologist use this distance for?
+
+ANSWER: The pattern differs from 3.2 in that distances to state borders are more localized and depend on individual state size, rather than simply distance from the national edge. States like Texas, Kansas, and Nebraska show the largest interior areas, which also overlap with major water resources features such as the Ogallala Aquifer and large river basins like the Platte and Arkansas Rivers. A hydrologist could use distance to state borders to understand jurisdictional complexity in water management, since water policies, data collection, and governance often change across state boundaries.
+
+```{r}
+#1. create a numeric version for plotting
+cities <- cities |>
+  mutate(dist_to_state_km = as.numeric(set_units(dist_to_state, "km")))
+
+#Step 1: Pick the 5 farthest cities 
+top_5_state_map <- cities |>
+  arrange(desc(dist_to_state_km)) |>
+  distinct(state_id, .keep_all = TRUE) |> # modified to keep only one city per state (otherwise top 5 were clustered in Texas)
+  slice_head(n = 5)
+
+#Step 2: Build the map
+ggplot() +
+  geom_sf(data = cities, aes(color = dist_to_state_km), size = 0.5, alpha = 0.8) +
+  geom_sf(data = us_national_polygon, fill = NA, color = "black", linewidth = 0.4) +
+  geom_sf(data = top_5_state_map, color = "red", size = 3) +
+  ggrepel::geom_label_repel(
+    data = top_5_state_map,
+    aes(geometry = geometry, label = city),
+    stat = "sf_coordinates",
+    size = 3
+  ) +
+  scale_color_viridis_c(name = "Distance to State Border (km)") +
+  labs(
+    title = "Distance of U.S. Cities to the Nearest State Border",
+    subtitle = "Cities are colored by distance to the nearest internal or external state boundary",
+    x = "Longitude",
+    y = "Latitude"
+  ) +
+  theme_minimal()
+```
+
+3.4 Equidistance Zone: Mexico and Canada Identify cities that are approximately equidistant from the Mexican and Canadian borders — within ±100 km of equal distance from both.
+
+In 2–3 sentences: (1) describe where the equidistant zone runs geographically, (2) does it surprise you that this band cuts through the interior of the country where it does? (3) What does this zone imply about the relative influence of Canadian vs. Mexican climate systems on cities in this corridor?
+
+ANSWER: The equidistant zone forms a broad east–west band across the central United States, roughly spanning the Great Plains and parts of the Midwest. It is not surprising that this band cuts through the interior, since these locations are approximately midway between the Canadian and Mexican borders. This zone suggests that cities within this corridor may experience a balance of climatic influences from both northern (Canadian) and southern (Mexican/subtropical) systems, making it an interesting region for studying transitional climate dynamics.
+
+```{r}
+#Step 1: Create the “equidistance” variable
+cities <- cities |>
+  mutate(
+    diff_border_km = abs(
+      as.numeric(set_units(dist_to_canada, "km")) -
+      as.numeric(set_units(dist_to_mexico, "km"))
+    )
+  )
+
+#Step 2: Define the equidistant zone
+equidistant_cities <- cities |>
+  filter(diff_border_km <= 100)
+
+#Step 3: Select top 5 most populous cities in this zone
+top_5_equidistant <- equidistant_cities |>
+  arrange(desc(population)) |>
+  slice_head(n = 5)
+
+#Step 4: Build the map
+ggplot() +
+  geom_sf(data = cities, color = "grey80", size = 0.4) +
+  
+  geom_sf(data = states, fill = NA, color = "black", linewidth = 0.3) +
+  
+  gghighlight::gghighlight(diff_border_km <= 100) +
+  
+  geom_sf(data = equidistant_cities, aes(color = diff_border_km), size = 1.2) +
+  
+  ggrepel::geom_label_repel(
+    data = top_5_equidistant,
+    aes(geometry = geometry, label = city),
+    stat = "sf_coordinates",
+    size = 3
+  ) +
+  
+  scale_color_viridis_c(name = "Difference (km)") +
+  
+  labs(
+    title = "Cities Equidistant from Mexico and Canada",
+    subtitle = "Cities within ±100 km of equal distance to both borders",
+    x = "Longitude",
+    y = "Latitude"
+  ) +
+  
+  theme_minimal()
+
+```
+
+Question 4: Real-World Application — The 100-Mile Border Zone
+
+4.1 Quantify the Zone Using your dist_to_border column, calculate:
+
+How many cities fall within the 100-mile zone? What is the total population living in cities within the zone? What percentage of the total US city population does this represent? Does your result match the ACLU’s published estimate? Present your findings as a formatted flextable.
+
+In 2–3 sentences: (1) report the percentage and compare it to the ACLU’s estimate, (2) explain why the result might be higher than many people expect given the geography of the US, (3) name one scenario where a water resources professional might need to navigate federal jurisdictional boundaries in a similar way — where a regulatory zone defined by distance from a physical boundary changes what analysis or permitting is required.
+
+ANSWER: A total of 13,430 cities fall within the 100-mile border zone, representing 258,156,163 people, or 65.3% of the U.S. city population in this dataset, which closely matches the ACLU’s estimate of about two-thirds. This percentage is higher than many people expect because the zone includes both coastlines and land borders, capturing a large share of the population concentrated along the coasts. In water resources, a similar distance-based regulatory boundary occurs in coastal zone management, where proximity to shorelines can change permitting and monitoring requirements even within the same watershed.
+
+```{r}
+#Step 1: Make sure distance is numeric (km)
+cities <- cities |>
+  mutate(dist_to_border_km = as.numeric(set_units(dist_to_border, "km")))
+
+#Step 2: Identify cities in the 100-mile zone
+cities <- cities |>
+  mutate(in_border_zone = dist_to_border_km <= 161)
+
+cities_filtered <- cities |>
+  filter(population > 50000)
+
+#Step 3: Calculate summary statistics
+zone_summary <- cities |>
+  st_drop_geometry() |>
+  summarise(
+    cities_in_zone = sum(in_border_zone),
+    total_cities = n(),
+    population_in_zone = sum(population[in_border_zone], na.rm = TRUE),
+    total_population = sum(population, na.rm = TRUE),
+    percent_population = (population_in_zone / total_population) * 100
+  )
+
+#Step 4: Clean up for presentation
+zone_table <- zone_summary |>
+  mutate(
+    percent_population = round(percent_population, 1)
+  )
+
+#Step 5: Make a clean flextable
+flextable(zone_table) |>
+  set_header_labels(
+    cities_in_zone = "Cities in 100-Mile Zone",
+    total_cities = "Total Cities",
+    population_in_zone = "Population in Zone",
+    total_population = "Total Population",
+    percent_population = "Percent of Population (%)"
+  ) |>
+  autofit()
+
+zone_summary
+```
+
+```{r}
+states_in_zone <- cities |>
+  filter(in_border_zone) |>
+  st_drop_geometry() |>
+  distinct(state_id) |>
+  nrow()
+
+states_in_zone
+```
+
+4.2 Map the Zone Create a map highlighting all cities within the 100-mile zone using gghighlight.
+
+Color cities by distance to the border using a gradient from "orange" to "darkred" Label the 10 most populous cities in the zone
+
+```{r}
+#rebuild border zone and dist to border columns
+cities <- cities |>
+  mutate(
+    dist_to_border_km = as.numeric(set_units(dist_to_border, "km")),
+    in_border_zone = dist_to_border_km <= 161
+  )
+```
+
+4.2 Map the Zone
+
+```{r}
+#Step 1: Get the 10 most populous cities in the zone
+top_10_zone <- cities |>
+  filter(in_border_zone) |>
+  arrange(desc(population)) |>
+  slice_head(n = 10)
+
+#Step 2: Build the map
+ggplot() +
+  geom_sf(data = cities, aes(color = dist_to_border_km), size = 0.5, alpha = 0.5) +
+  geom_sf(data = us_national_polygon, fill = NA, color = "black", linewidth = 0.4) +
+  gghighlight::gghighlight(in_border_zone) +
+  geom_sf(data = top_10_zone, color = "blue", size = 2) +
+  ggrepel::geom_label_repel(
+    data = top_10_zone,
+    aes(geometry = geometry, label = city),
+    stat = "sf_coordinates",
+    size = 3
+  ) +
+  scale_color_gradient(
+    name = "Distance to Border (km)",
+    low = "orange",
+    high = "darkred"
+  ) +
+  labs(
+    title = "Cities Within the 100-Mile Border Zone",
+    subtitle = "Highlighted cities fall within 100 miles of the U.S. external boundary",
+    x = "Longitude",
+    y = "Latitude"
+  ) +
+  theme_minimal()
+```
+
+4.3 Most Populous City per State in the Zone Repeat the map from 4.2, but instead of the 10 most populous overall, label the most populous city in each state that falls within the zone.
+
+In 2–3 sentences: (1) how many states have at least one city in the zone? (2) Are there states where the most populous city is NOT in the zone — what does that tell you about that state’s geography? (3) How might the jurisdictional boundary created by this rule create challenges for environmental monitoring programs that cross state or national boundaries?
+
+ANSWER: 48 states have at least one city within the 100-mile border zone, which shows how broadly this rule reaches across coastal and border regions of the country. There are also interior states where the most populous city is not in the zone, which suggests that those states’ largest urban centers are located far from coastlines and international borders because of their inland geography. This kind of jurisdictional boundary can complicate environmental monitoring programs, since sampling, permitting, and reporting requirements may shift abruptly across regulatory zones even when the underlying watershed, aquifer, or ecosystem is continuous.
+
+```{r}
+#Step 1: Build that dataset
+top_state_zone <- cities |>
+  filter(in_border_zone) |>
+  st_drop_geometry() |>
+  arrange(state_id, desc(population)) |>
+  distinct(state_id, .keep_all = TRUE)
+
+top_state_zone <- cities |>
+  filter(in_border_zone) |>
+  arrange(state_id, desc(population)) |>
+  distinct(state_id, .keep_all = TRUE)
+
+#Step 2: Build the map
+ggplot() +
+  geom_sf(data = cities, aes(color = dist_to_border_km), size = 0.5, alpha = 0.5) +
+  geom_sf(data = us_national_polygon, fill = NA, color = "black", linewidth = 0.4) +
+  gghighlight::gghighlight(in_border_zone) +
+  geom_sf(data = top_state_zone, color = "blue", size = 2) +
+  ggrepel::geom_label_repel(
+    data = top_state_zone,
+    aes(geometry = geometry, label = city),
+    stat = "sf_coordinates",
+    size = 3
+  ) +
+  scale_color_gradient(
+    name = "Distance to Border (km)",
+    low = "orange",
+    high = "darkred"
+  ) +
+  labs(
+    title = "Most Populous City per State Within the 100-Mile Border Zone",
+    subtitle = "One city per state is labeled, restricted to cities inside the zone",
+    x = "Longitude",
+    y = "Latitude"
+  ) +
+  theme_minimal()
+
+#Count how many states have at least one city in the zone
+states_in_zone <- cities |>
+  filter(in_border_zone) |>
+  st_drop_geometry() |>
+  distinct(state_id) |>
+  nrow()
+
+states_in_zone
+
+#Find states where the most populous city is NOT in the zone
+largest_city_by_state <- cities |>
+  st_drop_geometry() |>
+  arrange(desc(population)) |>
+  distinct(state_id, .keep_all = TRUE)
+
+largest_city_not_in_zone <- largest_city_by_state |>
+  filter(!in_border_zone)
+
+largest_city_not_in_zone
+```
+
+Question 5: Interactive Leaflet Exercise — Build an interactive map METHODS: The analysis was conducted in the North America Equidistant Conic projection (eqdc) to ensure accurate distance calculations, then all spatial data were transformed to WGS84 (EPSG:4326) for compatibility with Leaflet, which requires longitude and latitude coordinates. To keep the map responsive and readable, I used small circle markers, reduced opacity for the full city layer, and applied clustering to the full dataset while keeping the key overlay layers (equidistance and 100-mile zones) unclustered for clarity.
+
+```{r}
+# Load needed packages
+pacman::p_load(leaflet, htmltools)
+
+# Create numeric helper variables and flags
+cities <- cities |>
+  mutate(
+    dist_to_border_km = as.numeric(set_units(dist_to_border, "km")),
+    dist_to_mexico_km = as.numeric(set_units(dist_to_mexico, "km")),
+    dist_to_canada_km = as.numeric(set_units(dist_to_canada, "km")),
+    diff_border_km = abs(dist_to_canada_km - dist_to_mexico_km),
+    in_border_zone = dist_to_border_km <= 161,
+    in_equidistant_zone = diff_border_km <= 100
+  )
+
+# Build popup text
+cities <- cities |>
+  mutate(
+    popup_text = paste0(
+      "<b>", city, ", ", state_id, "</b><br/>",
+      "Population: ", format(population, big.mark = ","), "<br/>",
+      "Distance to National Border: ", round(dist_to_border_km, 1), " km<br/>",
+      "Distance to Mexico: ", round(dist_to_mexico_km, 1), " km<br/>",
+      "Distance to Canada: ", round(dist_to_canada_km, 1), " km<br/>",
+      "Mexico/Canada Difference: ", round(diff_border_km, 1), " km"
+    )
+  )
+
+# Transform spatial layers for leaflet
+cities_leaflet <- cities |>
+  st_transform(4326)
+
+states_leaflet <- states |>
+  st_transform(4326)
+
+# Create subset layers
+equidistant_leaflet <- cities_leaflet |>
+  filter(in_equidistant_zone)
+
+border_zone_leaflet <- cities_leaflet |>
+  filter(in_border_zone)
+
+# Create palette
+pal <- colorNumeric(
+  palette = "viridis",
+  domain = cities_leaflet$dist_to_border_km
+)
+
+# Build leaflet map
+leaflet() |>
+  addProviderTiles(providers$CartoDB.Positron, group = "CartoDB") |>
+  addProviderTiles(providers$OpenStreetMap, group = "OpenStreetMap") |>
+  addPolygons(
+    data = states_leaflet,
+    color = "black",
+    weight = 1,
+    fill = FALSE,
+    opacity = 0.7,
+    group = "State Boundaries"
+  ) |>
+ addCircleMarkers(
+  data = cities_leaflet,
+  radius = 2,
+  stroke = FALSE,
+  fillOpacity = 0.35,
+  color = ~pal(dist_to_border_km),
+  popup = ~popup_text,
+  group = "All Cities: Distance to Border",
+  clusterOptions = markerClusterOptions()
+) |>
+  addCircleMarkers(
+    data = equidistant_leaflet,
+    radius = 5,
+    stroke = TRUE,
+    weight = 1,
+    color = "blue",
+    fillColor = "cyan",
+    fillOpacity = 0.9,
+    popup = ~popup_text,
+    group = "Equidistance Zone (±100 km)"
+  ) |>
+  addCircleMarkers(
+    data = border_zone_leaflet,
+    radius = 5,
+    stroke = TRUE,
+    weight = 1,
+    color = "darkred",
+    fillColor = "orange",
+    fillOpacity = 0.9,
+    popup = ~popup_text,
+    group = "100-Mile Border Zone"
+  ) |>
+  addLegend(
+    position = "bottomright",
+    pal = pal,
+    values = cities_leaflet$dist_to_border_km,
+    title = "Distance to National Border (km)",
+    opacity = 1
+  ) |>
+  addLayersControl(
+    baseGroups = c("CartoDB", "OpenStreetMap"),
+    overlayGroups = c(
+      "State Boundaries",
+      "All Cities: Distance to Border",
+      "Equidistance Zone (±100 km)",
+      "100-Mile Border Zone"
+    ),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+```
+
+#```{r}
+#library(leaflet)
+#```

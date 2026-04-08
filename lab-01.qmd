@@ -7,7 +7,6 @@ format: html
 editor: visual
 ---
 
-
 ```{r}
 if (!requireNamespace("pacman", quietly = TRUE)) install.packages(("pacman"))
 
@@ -224,7 +223,7 @@ Question 4: Low-Flow Threshold Monitoring Drought managers don’t just watch ab
 
 Note The USGS computes official low-flow statistics — including the 7Q10 — and makes them accessible via dataRetrieval::readNWISstat(). The thresholds you compute here will closely approximate those official values and follow the same logic water rights lawyers and regulators actually use.
 
-a.  For each gauge, compute the 7-day rolling mean of daily discharge. Use zoo::rollmean() with fill = NA and align = "right" so each value represents the average of the current and 6 preceding days. If you havent see this function before, check out the documentation (?rollmean) and examples to understand how it works. 
+a.  For each gauge, compute the 7-day rolling mean of daily discharge. Use zoo::rollmean() with fill = NA and align = "right" so each value represents the average of the current and 6 preceding days. If you havent see this function before, check out the documentation (?rollmean) and examples to understand how it works.
 
 ```{r}
 flow_less_d <- flow_norm |>
@@ -298,8 +297,7 @@ lees_summary |>
   autofit()
 ```
 
-Write your 2–3 sentence interpretation here.
-The average number of below-threshold days at Lees Ferry increased/decreased from 2000–2010 to 2011–2023. What stands out is whether those low-flow days are clustered in just a few dry years or show up consistently across many years. If they’re occurring more regularly, that points to a broader shift in baseline conditions rather than isolated drought events.
+Write your 2–3 sentence interpretation here. The average number of below-threshold days at Lees Ferry increased/decreased from 2000–2010 to 2011–2023. What stands out is whether those low-flow days are clustered in just a few dry years or show up consistently across many years. If they’re occurring more regularly, that points to a broader shift in baseline conditions rather than isolated drought events.
 
 From a Compact perspective, more frequent low-flow conditions put additional pressure on upstream storage and make it harder to consistently meet delivery obligations, tightening the margin for water management decisions.
 
@@ -357,10 +355,7 @@ ggplot(lees_annual, aes(x = water_year, y = total_flow, fill = total_flow >= lee
   )
 ```
 
-Write your 2–3 sentence interpretation here.
-The record shows a clear downward shift from higher flows in the early–mid 1980s to a lower, more stable regime beginning in the late 1980s to early 1990s, with most years since then falling at or below the long-term median. One notable exception is around 2011, which stands out as a high-flow year likely driven by strong snowpack and runoff conditions. For Compact water accounting, this shift toward more frequent low-flow years means less buffer in the system, increasing reliance on upstream storage (e.g., Lake Powell) to meet delivery obligations and making compliance more sensitive to prolonged dry periods.
-
-
+Write your 2–3 sentence interpretation here. The record shows a clear downward shift from higher flows in the early–mid 1980s to a lower, more stable regime beginning in the late 1980s to early 1990s, with most years since then falling at or below the long-term median. One notable exception is around 2011, which stands out as a high-flow year likely driven by strong snowpack and runoff conditions. For Compact water accounting, this shift toward more frequent low-flow years means less buffer in the system, increasing reliance on upstream storage (e.g., Lake Powell) to meet delivery obligations and making compliance more sensitive to prolonged dry periods.
 
 ## Question 6: Basin-Wide Trend Analysis
 
@@ -416,8 +411,7 @@ ggplot(annual_basin_trend, aes(x = water_year, y = name, fill = anomaly)) +
 
 ### c. Interpretation
 
-Write your 3–4 sentence interpretation here.
-The post-2000 drought signal appears consistently across nearly all gauges, indicating a basin-wide pattern rather than localized variability. A wet anomaly around 1983 aligns with a strong El Niño event, while a dry anomaly around 2002 is consistent with La Niña conditions and widespread drought in the Southwest.
+Write your 3–4 sentence interpretation here. The post-2000 drought signal appears consistently across nearly all gauges, indicating a basin-wide pattern rather than localized variability. A wet anomaly around 1983 aligns with a strong El Niño event, while a dry anomaly around 2002 is consistent with La Niña conditions and widespread drought in the Southwest.
 
 Because these anomalies occur simultaneously across the basin, they point to large-scale climate forcing rather than local watershed effects, which would not be apparent from a single-gauge record.
 
@@ -439,7 +433,7 @@ Left: western US base map with the weighted center plotted as points colored by 
 
 If you haven’t seen patchwork before, it allows you to combine multiple ggplots into a single figure with simple syntax: plot1 + plot2 places them side by side; plot1 / plot2 stacks them vertically assuming the package is loaded.
 
-c.  Your latitude time series should show two years where the weighted center spikes dramatically northward. Identify those two years and explain: (1) what climate event caused each spike, (2) what they have in common physically, and (3) what the long-term upward trend in weighted latitude suggests about which part of the basin is becoming proportionally more important to total flow — and why that matters for water managers downstream. 
+c.  Your latitude time series should show two years where the weighted center spikes dramatically northward. Identify those two years and explain: (1) what climate event caused each spike, (2) what they have in common physically, and (3) what the long-term upward trend in weighted latitude suggests about which part of the basin is becoming proportionally more important to total flow — and why that matters for water managers downstream.
 
 ```{r}
 annual_drought_center <- annual |>
@@ -492,8 +486,6 @@ map_plot + lat_plot
 ### c. Interpretation
 
 Write your 3–4 sentence interpretation here.
-
-
 
 ## Question 8: Seasonal Regimes and Peak Timing
 
@@ -564,8 +556,7 @@ ggplot(lees_peak, aes(x = water_year, y = peak_doy)) +
 
 ### d. Interpretation
 
-Write your 2–3 sentence interpretation here.
-Peak flow timing at Lees Ferry shows a slight shift later in the year, on the order of a few weeks over the full record. However, the year-to-year variability is large, so while the trend is visible, it is partially obscured by noise and not strongly pronounced.
+Write your 2–3 sentence interpretation here. Peak flow timing at Lees Ferry shows a slight shift later in the year, on the order of a few weeks over the full record. However, the year-to-year variability is large, so while the trend is visible, it is partially obscured by noise and not strongly pronounced.
 
 Operationally, a two-week earlier peak would require reservoir managers to release or capture water sooner in the season, reducing flexibility and increasing the risk of either missing peak runoff or having insufficient storage capacity to manage high inflows effectively.
 
@@ -628,7 +619,8 @@ summary(mod)
 Write your 3–4 sentence interpretation here.
 
 ## Question 10: Model Evaluation
-The model explains a large portion of the variance in Lees Ferry flow (R² = 0.86) and is highly statistically significant overall (p < 0.001), indicating a strong relationship between upstream flow and downstream discharge. The coefficient on log_glenwood (1.80) is > 1, meaning the relationship is elastic. A 1% increase in upstream flow corresponds to roughly a 1.8% increase at Lees Ferry, reflecting amplification as additional tributaries contribute flow downstream.
+
+The model explains a large portion of the variance in Lees Ferry flow (R² = 0.86) and is highly statistically significant overall (p \< 0.001), indicating a strong relationship between upstream flow and downstream discharge. The coefficient on log_glenwood (1.80) is \> 1, meaning the relationship is elastic. A 1% increase in upstream flow corresponds to roughly a 1.8% increase at Lees Ferry, reflecting amplification as additional tributaries contribute flow downstream.
 
 The significant negative interaction terms show that this upstream–downstream relationship weakens outside of the Snowmelt season. In Monsoon, Low-flow, and Winter periods, increases in upstream flow translate less efficiently to Lees Ferry, likely due to reduced basin connectivity, higher losses, or more localized hydrologic processes.
 
@@ -660,7 +652,7 @@ ggplot(aug_mod, aes(x = .fitted, y = log_lees, color = season)) +
   )
 ```
 
-c.  Plot a histogram of the residuals with a vertical dashed line at zero. 
+c.  Plot a histogram of the residuals with a vertical dashed line at zero.
 
 ```{r}
 ggplot(aug_mod, aes(x = .resid)) +
@@ -675,8 +667,7 @@ ggplot(aug_mod, aes(x = .resid)) +
 
 d.  In 3–4 sentences: (1) identify the outlier water year visible in your scatter plot. Which year is it and why did the model fail to predict it? (2) Do the residuals appear approximately normal, or is there a tail that concerns you? (3) Name two additional predictors that would most improve this model and explain the physical mechanism behind each. \### a. Use broom::augment() \### d. Interpretation
 
-Write your 3–4 sentence interpretation here.
-The clear outlier is the very low-flow year around 2002, where the model overpredicts Lees Ferry flow because relying on a single upstream gauge doesn’t capture the full extent of basin-wide drought conditions. In that year, reduced snowpack, low soil moisture, and weaker tributary inputs likely limited how much flow actually made it downstream.  The residuals are generally centered around zero, but there’s a noticeable right tail, suggesting the model struggles with a few high-flow years. To improve the model, I would add basin-wide snowpack (SWE) to better represent snowmelt-driven runoff and a drought or precipitation index (e.g., PDSI) to capture broader hydroclimatic conditions that influence how efficiently upstream flow translates downstream.
+Write your 3–4 sentence interpretation here. The clear outlier is the very low-flow year around 2002, where the model overpredicts Lees Ferry flow because relying on a single upstream gauge doesn’t capture the full extent of basin-wide drought conditions. In that year, reduced snowpack, low soil moisture, and weaker tributary inputs likely limited how much flow actually made it downstream. The residuals are generally centered around zero, but there’s a noticeable right tail, suggesting the model struggles with a few high-flow years. To improve the model, I would add basin-wide snowpack (SWE) to better represent snowmelt-driven runoff and a drought or precipitation index (e.g., PDSI) to capture broader hydroclimatic conditions that influence how efficiently upstream flow translates downstream.
 
 ## Going Further (Ungraded)
 
@@ -686,8 +677,7 @@ These are real operational forecasting questions that USBR and state water agenc
 
 One natural next step would be to test whether a multi-gauge model performs better than the single-gauge Glenwood-to-Lees Ferry model used here. Because Lees Ferry integrates flow from multiple tributaries and upstream regions, a multi-gauge ensemble would likely capture basin-wide hydrologic conditions more effectively than any single station alone. Note: I did use chatgpt to help write my thoughts here.
 
-Another useful extension would be seasonal forecasting. For example, it may be possible to test whether late-winter or early-spring flows at upstream gauges, combined with snowpack information, can predict June flow at Lees Ferry before peak runoff occurs. 
-
+Another useful extension would be seasonal forecasting. For example, it may be possible to test whether late-winter or early-spring flows at upstream gauges, combined with snowpack information, can predict June flow at Lees Ferry before peak runoff occurs.
 
 Summary In this lab you built a complete analytical pipeline for one of the most consequential river systems in North America:
 
